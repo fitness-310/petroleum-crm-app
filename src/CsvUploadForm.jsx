@@ -434,7 +434,7 @@ const CsvUploadForm = () => {
           <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm w-full w-full mx-auto">
             <h4 className="text-lg md:text-xl font-semibold text-gray-900 mb-4 flex items-center flex-wrap text-center md:text-left justify-center md:justify-start">
               <Table className="w-5 h-5 mr-2 text-orange-600" />
-              Sample Data Format
+              Data Preview
             </h4>
 
             <div className="bg-gray-50 rounded-lg p-4 border overflow-x-auto">

@@ -15,7 +15,8 @@ import {
   ChevronRight,
   IndianRupee,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  XCircle
 } from 'lucide-react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
@@ -32,6 +33,7 @@ const BulkEntryForm = () => {
   const [showStartCalendar, setShowStartCalendar] = useState(false);
   const [showEndCalendar, setShowEndCalendar] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '', visible: false });
+  const [dateError, setDateError] = useState('');
 
   // Refs for detecting outside clicks
   const startCalendarRef = useRef(null);
@@ -59,12 +61,35 @@ const BulkEntryForm = () => {
     setTimeout(() => setMessage({ type: '', text: '', visible: false }), 3000);
   };
 
+  // Validate date range
+  const validateDateRange = (startDate, endDate) => {
+    if (!startDate || !endDate) return true;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (end < start) {
+      setDateError('End date cannot be before start date');
+      return false;
+    }
+
+    setDateError('');
+    return true;
+  };
+
   // Generate dates for the selected range
   const getDateRangeArray = () => {
     if (!dateRange.startDate || !dateRange.endDate) return [];
 
     const start = new Date(dateRange.startDate);
     const end = new Date(dateRange.endDate);
+
+    // Double check validation
+    if (end < start) {
+      setDateError('End date cannot be before start date');
+      return [];
+    }
+
     const dates = [];
 
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
@@ -76,7 +101,18 @@ const BulkEntryForm = () => {
 
   // Initialize bulk entries for date range with multiple entries per day
   const initializeBulkEntries = () => {
+    if (!validateDateRange(dateRange.startDate, dateRange.endDate)) {
+      showMessage('warning', '⚠️ Please fix the date range before proceeding!');
+      return;
+    }
+
     const dates = getDateRangeArray();
+
+    if (dates.length === 0) {
+      showMessage('warning', '⚠️ Please select a valid date range!');
+      return;
+    }
+
     const newBulkEntries = {};
 
     dates.forEach(date => {
@@ -106,16 +142,23 @@ const BulkEntryForm = () => {
     if (field === 'startDate') setShowStartCalendar(false);
     if (field === 'endDate') setShowEndCalendar(false);
 
+    // Validate date range whenever dates change
     if (newDateRange.startDate && newDateRange.endDate) {
-      setTimeout(initializeBulkEntries, 100);
+      validateDateRange(newDateRange.startDate, newDateRange.endDate);
+
+      // Only auto-initialize if dates are valid
+      if (validateDateRange(newDateRange.startDate, newDateRange.endDate)) {
+        setTimeout(initializeBulkEntries, 100);
+      }
     }
   };
 
-  // Calendar component
-  const renderCalendar = (selectedDate, onChange, showCalendar, setShowCalendar, calendarRef) => {
+  // Calendar component with date validation
+  const renderCalendar = (selectedDate, onChange, showCalendar, setShowCalendar, calendarRef, isEndDate = false) => {
     if (!showCalendar) return null;
 
     const dateValue = selectedDate ? new Date(selectedDate) : new Date();
+    const minDate = isEndDate && dateRange.startDate ? new Date(dateRange.startDate) : undefined;
 
     return (
       <AnimatePresence>
@@ -134,17 +177,36 @@ const BulkEntryForm = () => {
                 onChange(formattedDate);
               }}
               value={dateValue}
+              minDate={minDate}
               className="rounded-xl"
-              tileClassName={({ date, view }) =>
-                view === 'month' && selectedDate && date.toDateString() === dateValue.toDateString()
+              tileClassName={({ date, view }) => {
+                const baseClass = view === 'month' && selectedDate && date.toDateString() === dateValue.toDateString()
                   ? 'bg-blue-500 text-white rounded-lg'
-                  : ''
-              }
+                  : '';
+
+                // Disable dates before start date for end date calendar
+                if (isEndDate && minDate && date < minDate) {
+                  return 'text-gray-300 cursor-not-allowed';
+                }
+
+                return baseClass;
+              }}
+              tileDisabled={({ date, view }) => {
+                if (view !== 'month') return false;
+                // Disable dates before start date for end date calendar
+                return isEndDate && minDate && date < minDate;
+              }}
               prevLabel={<ChevronLeft className="w-4 h-4 ml-5" />}
               nextLabel={<ChevronRight className="w-4 h-4" />}
               prev2Label={null}
               next2Label={null}
             />
+
+            {isEndDate && minDate && (
+              <div className="text-xs text-gray-500 text-center mt-2 p-2 bg-blue-50 rounded-lg">
+                ⚡ Select date from {minDate.toLocaleDateString()} or after
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -215,12 +277,18 @@ const BulkEntryForm = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
+    // Check date range validity first
+    if (!validateDateRange(dateRange.startDate, dateRange.endDate)) {
+      showMessage('warning', '⚠️ Please fix the date range before submitting!');
+      return;
+    }
+
     // Check if all required fields are filled
     const hasEmpty = Object.values(bulkEntries).some(dayEntries =>
       dayEntries.some(entry =>
         Object.values(entry).some(section =>
-          typeof section === 'object' && section !== null && 
+          typeof section === 'object' && section !== null &&
           Object.values(section).some(value => value === '')
         )
       )
@@ -242,15 +310,21 @@ const BulkEntryForm = () => {
   const currentCustomer = dayEntries[currentCustomerPage];
   const totalCustomers = dayEntries.length;
 
+  // Clear date error when dates are changed to valid range
+  useEffect(() => {
+    if (dateRange.startDate && dateRange.endDate) {
+      validateDateRange(dateRange.startDate, dateRange.endDate);
+    }
+  }, [dateRange.startDate, dateRange.endDate]);
+
   if (dates.length === 0) {
     return (
       <div className="space-y-6">
         {/* Toast Message */}
         {message.visible && (
           <div
-            className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white text-lg font-medium z-50 transition-all duration-500 ${
-              message.type === 'success' ? 'bg-green-600' : 'bg-yellow-500'
-            } animate-fadeInDown`}
+            className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white text-lg font-medium z-50 transition-all duration-500 ${message.type === 'success' ? 'bg-green-600' : 'bg-yellow-500'
+              } animate-fadeInDown`}
           >
             <div className="flex items-center space-x-2">
               {message.type === 'success' ? (
@@ -277,6 +351,19 @@ const BulkEntryForm = () => {
             </div>
           </div>
 
+          {/* Date Error Message */}
+          {dateError && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center">
+              <XCircle className="w-5 h-5 text-red-500 mr-3 flex-shrink-0" />
+              <div>
+                <p className="text-red-800 font-medium">{dateError}</p>
+                <p className="text-red-600 text-sm mt-1">
+                  Please select an end date that comes after the start date.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="relative">
               <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -284,7 +371,8 @@ const BulkEntryForm = () => {
               </label>
               <div className="relative" ref={startCalendarRef}>
                 <div
-                  className="bg-white border-2 border-gray-300 rounded-2xl p-4 cursor-pointer hover:border-blue-500 transition-colors"
+                  className={`bg-white border-2 rounded-2xl p-4 cursor-pointer transition-colors ${dateError ? 'border-red-300' : 'border-gray-300 hover:border-blue-500'
+                    }`}
                   onClick={() => setShowStartCalendar(true)}
                 >
                   <input
@@ -294,14 +382,16 @@ const BulkEntryForm = () => {
                     className="w-full bg-transparent border-none focus:outline-none text-lg font-semibold text-gray-800 cursor-pointer text-center"
                     placeholder="Click to select date"
                   />
-                  <CalendarIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-6 h-6" />
+                  <CalendarIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 w-6 h-6 ${dateError ? 'text-red-500' : 'text-gray-500'
+                    }`} />
                 </div>
                 {renderCalendar(
-                  dateRange.startDate, 
-                  (date) => handleDateRangeChange('startDate', date), 
-                  showStartCalendar, 
+                  dateRange.startDate,
+                  (date) => handleDateRangeChange('startDate', date),
+                  showStartCalendar,
                   setShowStartCalendar,
-                  startCalendarRef
+                  startCalendarRef,
+                  false
                 )}
               </div>
             </div>
@@ -312,7 +402,8 @@ const BulkEntryForm = () => {
               </label>
               <div className="relative" ref={endCalendarRef}>
                 <div
-                  className="bg-white border-2 border-gray-300 rounded-2xl p-4 cursor-pointer hover:border-blue-500 transition-colors"
+                  className={`bg-white border-2 rounded-2xl p-4 cursor-pointer transition-colors ${dateError ? 'border-red-300' : 'border-gray-300 hover:border-blue-500'
+                    }`}
                   onClick={() => setShowEndCalendar(true)}
                 >
                   <input
@@ -322,14 +413,16 @@ const BulkEntryForm = () => {
                     className="w-full bg-transparent border-none focus:outline-none text-lg font-semibold text-gray-800 cursor-pointer text-center"
                     placeholder="Click to select date"
                   />
-                  <CalendarIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-6 h-6" />
+                  <CalendarIcon className={`absolute right-4 top-1/2 transform -translate-y-1/2 w-6 h-6 ${dateError ? 'text-red-500' : 'text-gray-500'
+                    }`} />
                 </div>
                 {renderCalendar(
-                  dateRange.endDate, 
-                  (date) => handleDateRangeChange('endDate', date), 
-                  showEndCalendar, 
+                  dateRange.endDate,
+                  (date) => handleDateRangeChange('endDate', date),
+                  showEndCalendar,
                   setShowEndCalendar,
-                  endCalendarRef
+                  endCalendarRef,
+                  true // This is the end date calendar
                 )}
               </div>
             </div>
@@ -338,10 +431,10 @@ const BulkEntryForm = () => {
               <button
                 type="button"
                 onClick={initializeBulkEntries}
-                disabled={!dateRange.startDate || !dateRange.endDate}
-                className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl font-semibold shadow-md hover:shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-all transform hover:scale-105"
+                disabled={!dateRange.startDate || !dateRange.endDate || dateError}
+                className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl font-semibold shadow-md hover:shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-all transform hover:scale-105 disabled:hover:scale-100"
               >
-                🚀 Initialize Entries
+                {dateError ? '❌ Fix Dates First' : '🚀 Initialize Entries'}
               </button>
             </div>
           </div>
@@ -350,12 +443,17 @@ const BulkEntryForm = () => {
         {/* Empty State */}
         <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-blue-50 rounded-3xl border-2 border-dashed border-gray-300">
           <CalendarRange className="w-24 h-24 text-gray-400 mx-auto mb-6" />
-          <h3 className="text-3xl font-bold text-gray-800 mb-3">Ready for Bulk Entry</h3>
+          <h3 className="text-3xl font-bold text-gray-800 mb-3">
+            {dateError ? 'Date Range Issue' : 'Ready for Bulk Entry'}
+          </h3>
           <p className="text-gray-600 max-w-md mx-auto mb-8 text-lg">
-            Select a date range above to start entering data for multiple days at once.
+            {dateError
+              ? 'Please select a valid date range where the end date comes after the start date.'
+              : 'Select a date range above to start entering data for multiple days at once.'
+            }
           </p>
           <div className="text-sm text-gray-500">
-            📅 Select dates • 👥 Multiple customers • ⚡ Quick entry
+            {dateError ? '🔄 Fix dates • 📅 Valid range • ✅ Proceed' : '📅 Select dates • 👥 Multiple customers • ⚡ Quick entry'}
           </div>
         </div>
       </div>
@@ -367,9 +465,8 @@ const BulkEntryForm = () => {
       {/* Toast Message */}
       {message.visible && (
         <div
-          className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white text-lg font-medium z-50 transition-all duration-500 ${
-            message.type === 'success' ? 'bg-green-600' : 'bg-yellow-500'
-          } animate-fadeInDown`}
+          className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg text-white text-lg font-medium z-50 transition-all duration-500 ${message.type === 'success' ? 'bg-green-600' : 'bg-yellow-500'
+            } animate-fadeInDown`}
         >
           <div className="flex items-center space-x-2">
             {message.type === 'success' ? (
@@ -426,11 +523,12 @@ const BulkEntryForm = () => {
                 <CalendarIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-6 h-6" />
               </div>
               {renderCalendar(
-                dateRange.startDate, 
-                (date) => handleDateRangeChange('startDate', date), 
-                showStartCalendar, 
+                dateRange.startDate,
+                (date) => handleDateRangeChange('startDate', date),
+                showStartCalendar,
                 setShowStartCalendar,
-                startCalendarRef
+                startCalendarRef,
+                false
               )}
             </div>
           </div>
@@ -453,18 +551,21 @@ const BulkEntryForm = () => {
                 <CalendarIcon className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-6 h-6" />
               </div>
               {renderCalendar(
-                dateRange.endDate, 
-                (date) => handleDateRangeChange('endDate', date), 
-                showEndCalendar, 
+                dateRange.endDate,
+                (date) => handleDateRangeChange('endDate', date),
+                showEndCalendar,
                 setShowEndCalendar,
-                endCalendarRef
+                endCalendarRef,
+                true
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rest of the existing JSX remains the same */}
+      {/* Rest of the form remains the same */}
+      {/* ... existing JSX for bulk entries, pagination, customer forms, etc. ... */}
+
       {/* Bulk Entry Header */}
       <div className="bg-gradient-to-r from-green-600 to-blue-700 rounded-2xl p-6 text-white">
         <div className="flex items-center justify-between">
