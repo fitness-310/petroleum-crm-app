@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema(
       enum: ["data_outlet", "report", "data_report", "admin"],
       default: "data_outlet",
     },
-    outletId: { type: String, default: null }, // optional for outlet linkage
+    outletId: { type: String, default: null },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
